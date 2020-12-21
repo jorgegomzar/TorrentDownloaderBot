@@ -1,0 +1,9 @@
+TOKEN = 'YOUR:TOKEN'
+ALLOWED_IDS = [0, ]
+TORRENT = {
+	'user': 'admin',
+	'pass': 'adminadmin',
+	'server': 'http://localhost:8080'
+}
+ALLOWED_TYPES = ['Mechas', 'Lolis', 'Culture', 'Memes']
+SAVE_PATH = '/path/to/anime/heaven/'

@@ -1,0 +1,2 @@
+python-qbittorrent
+python-telegram-bot
