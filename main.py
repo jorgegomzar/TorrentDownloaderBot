@@ -122,7 +122,10 @@ def unknown(update, context) -> None:
 	"""
 	En caso de obtener respuestas no pedidas ni contempladas
 	"""
-	context.bot.send_message(chat_id=update.effective_chat.id, text="No te he comprendido")
+	update.message.reply_text(
+        '❌ No te he comprendido...'
+    )
+	return ConversationHandler.END
 
 ### MAIN
 def main() -> None:
