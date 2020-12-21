@@ -1,3 +1,4 @@
+import qbittorrent
 import config, logging, time
 from qbittorrent import Client
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
@@ -16,7 +17,7 @@ torrent_link, save_path = '',''
 TYPE, MAGNET, CONFIRM = range(3)
 
 ### Funciones
-def start(update: Update, context: CallbackContext) -> int:
+def download(update: Update, context: CallbackContext) -> int:
 	"""
 	Respuesta al comando "/start"
 	- Comprueba la ID para saber si es un usuario permitido
@@ -28,11 +29,11 @@ def start(update: Update, context: CallbackContext) -> int:
 
 	reply_keyboard = [config.ALLOWED_TYPES]
 
-	if update.effective_chat.id not in config.ALLOWED_IDS:
+	if int(update.effective_chat.id) not in config.ALLOWED_IDS:
 		logger.info('⚠️- Un usuario SIN permiso ha intentado usar el bot')
-		logger.info('Chat ID: ' + update.effective_chat.id)
-		logger.info('Usuario: ' + update.effective_chat.first_name + ' ' + update.effective_chat.last_name)
-		logger.info('Bio: ' + update.effective_chat.bio)
+		logger.info('Chat ID: ' + str(update.effective_chat.id))
+		logger.info('Usuario: ' + str(update.effective_chat.first_name) + ' ' + str(update.effective_chat.last_name))
+		logger.info('Bio: ' + str(update.effective_chat.bio))
 		update.message.reply_text(
 			'❌ No tengo permiso para hablar contigo'
 		)
@@ -89,7 +90,7 @@ def confirm(update: Update, context: CallbackContext) -> int:
 	"""
 	logger.info(' [-] Confirmacion: {}'.format(update.message.text))
 
-	download()
+	download_torrent()
 	update.message.reply_text(
 		'✅ Descarga en cola',
 		reply_markup=ReplyKeyboardRemove()
@@ -97,7 +98,7 @@ def confirm(update: Update, context: CallbackContext) -> int:
 	return ConversationHandler.END
 
 
-def download():
+def download_torrent():
 	"""
 	- Establece la conexión con qBitTorrent
 	- Descarga los ficheros
@@ -118,27 +119,74 @@ def cancel(update: Update, context: CallbackContext) -> int:
     )
 	return ConversationHandler.END
 
-def unknown(update, context) -> None:
+def help(update, context) -> None:
 	"""
-	En caso de obtener respuestas no pedidas ni contempladas
+	Muestra una ayuda con los comandos disponibles
 	"""
 	update.message.reply_text(
-        '❌ No te he comprendido...'
+        'start - Da una pequeña descripción de las funciones actuales del Bot\n'
+		'download - Inicia el proceso para descargar un torrent\n'
+		'status - Muestra la cola de descargas actuales\n'
+		'help - Muestra esta lista'
     )
-	return ConversationHandler.END
+
+def start(update: Update, context: CallbackContext) -> None:
+	"""
+	Dar una descripción del bot y sus funciones actuales
+	"""
+	update.message.reply_text(
+        'Buenas, mi nombre es TorrentDownloaderBot. '
+        'Soy un Bot de descargas de torrents creado por <pre>BenoBelmont</pre>\n'
+        'Yo solo sirvo a mi creador, pero puedes acceder a mi código fuente '
+        'sin problema alguno en https://github.com/jorgegomzar/TorrentDownloaderBot\n'
+        'Actualmente, entre mis funciones, se incluye:\n'
+        '  1- Descargar torrents\n'
+        '  2- Mostrar el estado de la cola de descarga\n'
+    )
+
+def status(update: Update, context: CallbackContext) -> None:
+	"""
+	Muestra el estado de la cola de descargas
+	"""
+	qb = Client(config.TORRENT['server'])
+	qb.login(config.TORRENT['user'], config.TORRENT['pass'])
+	torrents = qb.torrents()
+	for torrent in torrents:
+		print('Torrent: {}'.format(torrent["name"]))
+		print('Tamaño: {}'.format(get_size_format(torrent["total_size"])))
+		print('Tasa de descarga: {}/s'.format(get_size_format(torrent["dlspeed"])))
+
+def get_size_format(b, factor=1024, suffix="B"):
+    """
+    Scale bytes to its proper byte format
+    e.g:
+        1253656 => '1.20MB'
+        1253656678 => '1.17GB'
+		Source: https://www.thepythoncode.com/article/download-torrent-files-in-python
+    """
+    for unit in ["", "K", "M", "G", "T", "P", "E", "Z"]:
+        if b < factor:
+            return f"{b:.2f}{unit}{suffix}"
+        b /= factor
+    return f"{b:.2f}Y{suffix}"
 
 ### MAIN
 def main() -> None:
 	updater = Updater(token=config.TOKEN, use_context=True)
 	dispatcher = updater.dispatcher
 	down_handler = ConversationHandler(
-		entry_points=[CommandHandler('start', start)],
+		entry_points=[CommandHandler('download', download)],
 		states = {
 			TYPE: [MessageHandler(Filters.regex('^('+'|'.join([i for i in config.ALLOWED_TYPES])+')$'), type)],
 			MAGNET: [MessageHandler(Filters.regex('^magnet*'), magnet)],
 			CONFIRM: [MessageHandler(Filters.regex('^OK$'), confirm)],
 		},
-		fallbacks=[CommandHandler('cancel', cancel),],
+		fallbacks=[
+			CommandHandler('cancel', cancel),
+			CommandHandler('start', start),
+			CommandHandler('status', status),
+			CommandHandler('help', help),
+		],
 	)
 	dispatcher.add_handler(down_handler)
 
