@@ -191,7 +191,7 @@ def start(update: Update, context: CallbackContext) -> None:
         'Actualmente, entre mis funciones, se incluye:\n'
         '  /download - Descargar torrents\n'
         '  /status - Mostrar el estado de la cola de descarga\n'
-        '  /clear - Elimina los torrents finalizados de la cola de descarga\n'
+        '  /clear - Eliminar los torrents finalizados de la cola de descarga\n'
     )
 
 def help(update, context) -> None:
