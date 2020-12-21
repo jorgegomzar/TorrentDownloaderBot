@@ -134,7 +134,7 @@ def main() -> None:
 	down_handler = ConversationHandler(
 		entry_points=[CommandHandler('start', start)],
 		states = {
-			TYPE: [MessageHandler(Filters.regex('^('+'|'.join([i for i in config.type])+')$'), type)],
+			TYPE: [MessageHandler(Filters.regex('^('+'|'.join([i for i in config.ALLOWED_TYPES])+')$'), type)],
 			MAGNET: [MessageHandler(Filters.regex('^magnet*'), magnet)],
 			CONFIRM: [MessageHandler(Filters.regex('^OK$'), confirm)],
 		},
