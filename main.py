@@ -138,7 +138,7 @@ def main() -> None:
 			MAGNET: [MessageHandler(Filters.regex('^magnet*'), magnet)],
 			CONFIRM: [MessageHandler(Filters.regex('^OK$'), confirm)],
 		},
-		fallbacks=[CommandHandler('cancel', cancel),MessageHandler([Filters.command], unknown)],
+		fallbacks=[CommandHandler('cancel', cancel),],
 	)
 	dispatcher.add_handler(down_handler)
 
