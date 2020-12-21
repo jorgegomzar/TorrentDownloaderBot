@@ -97,7 +97,6 @@ def confirm(update: Update, context: CallbackContext) -> int:
 	)
 	return ConversationHandler.END
 
-
 def download_torrent():
 	"""
 	- Establece la conexión con qBitTorrent
@@ -106,8 +105,8 @@ def download_torrent():
 	qb = Client(config.TORRENT['server'])
 	qb.login(config.TORRENT['user'], config.TORRENT['pass'])
 	qb.download_from_link(torrent_link, savepath=save_path)
+	qb.logout()
 	logger.info('✅ - {} en cola'.format(torrent_link))
-
 
 def cancel(update: Update, context: CallbackContext) -> int:
 	"""
@@ -119,43 +118,123 @@ def cancel(update: Update, context: CallbackContext) -> int:
     )
 	return ConversationHandler.END
 
-def help(update, context) -> None:
+def status(update: Update, context: CallbackContext) -> None:
 	"""
-	Muestra una ayuda con los comandos disponibles
+	Muestra el estado de la cola de descargas
 	"""
+	logger.info(' El usuario ha ejecutado /status')
+	qb = Client(config.TORRENT['server'])
+	qb.login(config.TORRENT['user'], config.TORRENT['pass'])
+	torrents = qb.torrents()
+	qb.logout()
+	if len(torrents) == 0:
+		update.message.reply_text('Parece que en este momento no hay nada en cola')
+	else:
+		update.message.reply_text('Hay {} torrents en cola\n'.format(len(torrents)))
+		for torrent in torrents:
+			update.message.reply_text(
+				'Torrent: {}\nEstado: {}\nTamaño: {}\nProgreso: {}%\nTasa de descarga: {}/s\n'.format(
+					torrent['name'],
+					torrent['state'],
+					get_size_format(torrent['total_size']),
+					str(float(torrent['progress'])*100),
+					get_size_format(torrent['dlspeed']),
+					)
+				)
+
+def unknown(update: Update, context: CallbackContext) -> None:
+	"""
+	El usuario ha introducido un comando desconocido
+	"""
+	logger.info(' El usuario ha ejecutado {}'.format(update.message.text))
 	update.message.reply_text(
-        'start - Da una pequeña descripción de las funciones actuales del Bot\n'
-		'download - Inicia el proceso para descargar un torrent\n'
-		'status - Muestra la cola de descargas actuales\n'
-		'help - Muestra esta lista'
-    )
+		'No te he entendido bien, por favor, usa las opciones disponibles.'
+	)
+
+def clear(update: Update, context: CallbackContext) -> None:
+	"""
+	Limpia los torrents finalizados de la cola de descarga
+	"""
+	logger.info(' El usuario ha ejecutado /clear')
+	FINISHED_STATES = [
+		'uploading',
+		'pausedUP',
+		'stalledUP',
+		'queuedUP',
+	]
+	qb = Client(config.TORRENT['server'])
+	qb.login(config.TORRENT['user'], config.TORRENT['pass'])
+	torrents = qb.torrents()
+	del_torrents = len(torrents)
+	for torrent in torrents:
+		if torrent['state'] in FINISHED_STATES:
+			qb.delete(torrent['hash'])
+	torrents = qb.torrents()
+	del_torrents = del_torrents - len(torrents)
+	qb.logout()
+	logger.info('{} torrents han sido eliminados de la cola'.format(del_torrents))
+	if del_torrents != 0:
+		update.message.reply_text('Borrados todos los torrents finalizados')
+	else:
+		update.message.reply_text('No se ha eliminado ningún torrent de la cola')
 
 def start(update: Update, context: CallbackContext) -> None:
 	"""
 	Dar una descripción del bot y sus funciones actuales
 	"""
+	logger.info(' El usuario ha ejecutado /start')
 	update.message.reply_text(
         'Buenas, mi nombre es TorrentDownloaderBot. '
-        'Soy un Bot de descargas de torrents creado por <pre>BenoBelmont</pre>\n'
+        'Soy un Bot de descargas de torrents creado por BenoBelmont\n\n'
         'Yo solo sirvo a mi creador, pero puedes acceder a mi código fuente '
         'sin problema alguno en https://github.com/jorgegomzar/TorrentDownloaderBot\n'
         'Actualmente, entre mis funciones, se incluye:\n'
-        '  1- Descargar torrents\n'
-        '  2- Mostrar el estado de la cola de descarga\n'
+        '  /download - Descargar torrents\n'
+        '  /status - Mostrar el estado de la cola de descarga\n'
+        '  /clear - Elimina los torrents finalizados de la cola de descarga\n'
     )
 
-def status(update: Update, context: CallbackContext) -> None:
+def help(update, context) -> None:
 	"""
-	Muestra el estado de la cola de descargas
+	Muestra una ayuda con los comandos disponibles
 	"""
-	qb = Client(config.TORRENT['server'])
-	qb.login(config.TORRENT['user'], config.TORRENT['pass'])
-	torrents = qb.torrents()
-	for torrent in torrents:
-		print('Torrent: {}'.format(torrent["name"]))
-		print('Tamaño: {}'.format(get_size_format(torrent["total_size"])))
-		print('Tasa de descarga: {}/s'.format(get_size_format(torrent["dlspeed"])))
+	logger.info(' El usuario ha ejecutado /help')
+	update.message.reply_text(
+        'start - Da una pequeña descripción de las funciones actuales del Bot\n'
+		'download - Inicia el proceso para descargar un torrent\n'
+		'status - Muestra la cola de descargas actuales\n'
+		'clear - Limpia la cola de descargas\n'
+		'help - Muestra esta lista'
+    )
 
+### MAIN
+def main() -> None:
+	updater = Updater(token=config.TOKEN, use_context=True)
+	dispatcher = updater.dispatcher
+	down_handler = ConversationHandler(
+		entry_points=[CommandHandler('download', download)],
+		states = {
+			TYPE: [MessageHandler(Filters.regex('^('+'|'.join([i for i in config.ALLOWED_TYPES])+')$'), type)],
+			MAGNET: [MessageHandler(Filters.regex('^magnet*'), magnet)],
+			CONFIRM: [MessageHandler(Filters.regex('^OK$'), confirm)],
+		},
+		fallbacks=[CommandHandler('cancel', cancel),],
+	)
+	dispatcher.add_handler(down_handler)
+	dispatcher.add_handler(CommandHandler('start', start))
+	dispatcher.add_handler(CommandHandler('status', status))
+	dispatcher.add_handler(CommandHandler('clear', clear))
+	dispatcher.add_handler(CommandHandler('help', help))
+	dispatcher.add_handler(MessageHandler(Filters.command, unknown))
+
+	updater.start_polling()
+	updater.idle()
+
+if __name__ == '__main__':
+	main()
+
+
+# Auxiliares
 def get_size_format(b, factor=1024, suffix="B"):
     """
     Scale bytes to its proper byte format
@@ -169,29 +248,3 @@ def get_size_format(b, factor=1024, suffix="B"):
             return f"{b:.2f}{unit}{suffix}"
         b /= factor
     return f"{b:.2f}Y{suffix}"
-
-### MAIN
-def main() -> None:
-	updater = Updater(token=config.TOKEN, use_context=True)
-	dispatcher = updater.dispatcher
-	down_handler = ConversationHandler(
-		entry_points=[CommandHandler('download', download)],
-		states = {
-			TYPE: [MessageHandler(Filters.regex('^('+'|'.join([i for i in config.ALLOWED_TYPES])+')$'), type)],
-			MAGNET: [MessageHandler(Filters.regex('^magnet*'), magnet)],
-			CONFIRM: [MessageHandler(Filters.regex('^OK$'), confirm)],
-		},
-		fallbacks=[
-			CommandHandler('cancel', cancel),
-			CommandHandler('start', start),
-			CommandHandler('status', status),
-			CommandHandler('help', help),
-		],
-	)
-	dispatcher.add_handler(down_handler)
-
-	updater.start_polling()
-	updater.idle()
-
-if __name__ == '__main__':
-	main()
