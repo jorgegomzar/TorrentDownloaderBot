@@ -200,11 +200,11 @@ def help(update, context) -> None:
 	"""
 	logger.info(' El usuario ha ejecutado /help')
 	update.message.reply_text(
-        'start - Da una pequeña descripción de las funciones actuales del Bot\n'
-		'download - Inicia el proceso para descargar un torrent\n'
-		'status - Muestra la cola de descargas actuales\n'
-		'clear - Limpia la cola de descargas\n'
-		'help - Muestra esta lista'
+        '/start - Da una pequeña descripción de las funciones actuales del Bot\n'
+		'/download - Inicia el proceso para descargar un torrent\n'
+		'/status - Muestra la cola de descargas actuales\n'
+		'/clear - Limpia la cola de descargas\n'
+		'/help - Muestra esta lista'
     )
 
 ### MAIN
