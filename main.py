@@ -1,7 +1,6 @@
-import qbittorrent
-import config, logging, time
+import config, logging
 from qbittorrent import Client
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update, Bot
 from telegram.ext import Updater, CommandHandler
 from telegram.ext.filters import Filters
 from telegram.ext.messagehandler import MessageHandler
@@ -16,7 +15,35 @@ logger = logging.getLogger(__name__)
 torrent_link, save_path = '',''
 TYPE, MAGNET, CONFIRM = range(3)
 
-### Funciones
+### Funciones del bot
+def start(update: Update, context: CallbackContext) -> None:
+	"""
+	Dar una descripción del bot y sus funciones actuales
+	"""
+	reply_keyboard = [['/download'], ['/status', '/clear']]
+	logger.info(' El usuario ha ejecutado /start')
+	update.message.reply_text(
+        'Escoge una opción:',
+		reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+    )
+
+def help(update, context) -> None:
+	"""
+	Muestra una ayuda con los comandos disponibles
+	"""
+	logger.info(' El usuario ha ejecutado /help')
+	update.message.reply_text(
+		'Soy TorrentDownloaderBot, un Bot de descargas de torrents creado por BenoBelmont\n\n'
+        'Yo solo sirvo a mi creador, pero puedes acceder a mi código fuente '
+        'sin problema alguno en https://github.com/jorgegomzar/TorrentDownloaderBot\n\n'
+        'Actualmente, entre mis funciones, se incluyen:\n'
+        '- /start - Iniciar la conversación\n'
+		'- /download - Descargar un torrent\n'
+		'- /status - Mostrar la cola de descargas actuales\n'
+		'- /clear - Limpiar la cola de descargas\n'
+		'- /help - Mostrar este mensaje'
+    )
+
 def download(update: Update, context: CallbackContext) -> int:
 	"""
 	Respuesta al comando "/start"
@@ -26,23 +53,16 @@ def download(update: Update, context: CallbackContext) -> int:
 	"""
 	global torrent_link, save_path
 	torrent_link, save_path = '',''
-
 	reply_keyboard = [config.ALLOWED_TYPES]
 
 	if int(update.effective_chat.id) not in config.ALLOWED_IDS:
-		logger.info('⚠️- Un usuario SIN permiso ha intentado usar el bot')
-		logger.info('Chat ID: ' + str(update.effective_chat.id))
-		logger.info('Usuario: ' + str(update.effective_chat.first_name) + ' ' + str(update.effective_chat.last_name))
-		logger.info('Bio: ' + str(update.effective_chat.bio))
-		update.message.reply_text(
-			'❌ No tengo permiso para hablar contigo'
-		)
+		not_allowed(update)
 		return ConversationHandler.END
 	else:
 		logger.info('ℹ - Un usuario CON permiso solicita usar el bot')
 		update.message.reply_text(
 			'Hola, ¿qué tipo de media vamos a descargar?\n'
-			'Escribe /cancel para cancelar el proceso',
+			'Responde /cancel en cualquier momento para cancelar el proceso',
 			reply_markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True),
 		)
 		return TYPE
@@ -97,17 +117,6 @@ def confirm(update: Update, context: CallbackContext) -> int:
 	)
 	return ConversationHandler.END
 
-def download_torrent():
-	"""
-	- Establece la conexión con qBitTorrent
-	- Descarga los ficheros
-	"""
-	qb = Client(config.TORRENT['server'])
-	qb.login(config.TORRENT['user'], config.TORRENT['pass'])
-	qb.download_from_link(torrent_link, savepath=save_path)
-	qb.logout()
-	logger.info('✅ - {} en cola'.format(torrent_link))
-
 def cancel(update: Update, context: CallbackContext) -> int:
 	"""
 	En caso de cancelación
@@ -122,92 +131,101 @@ def status(update: Update, context: CallbackContext) -> None:
 	"""
 	Muestra el estado de la cola de descargas
 	"""
-	logger.info(' El usuario ha ejecutado /status')
-	qb = Client(config.TORRENT['server'])
-	qb.login(config.TORRENT['user'], config.TORRENT['pass'])
-	torrents = qb.torrents()
-	qb.logout()
-	if len(torrents) == 0:
-		update.message.reply_text('Parece que en este momento no hay nada en cola')
+	if int(update.effective_chat.id) not in config.ALLOWED_IDS:
+		not_allowed(update)
 	else:
-		update.message.reply_text('Hay {} torrents en cola\n'.format(len(torrents)))
-		for torrent in torrents:
-			update.message.reply_text(
-				'Torrent: {}\nEstado: {}\nTamaño: {}\nProgreso: {}%\nTasa de descarga: {}/s\n'.format(
-					torrent['name'],
-					torrent['state'],
-					get_size_format(torrent['total_size']),
-					str(float(torrent['progress'])*100),
-					get_size_format(torrent['dlspeed']),
+		logger.info(' El usuario ha ejecutado /status')
+		qb = Client(config.TORRENT['server'])
+		qb.login(config.TORRENT['user'], config.TORRENT['pass'])
+		torrents = qb.torrents()
+		qb.logout()
+		if len(torrents) == 0:
+			update.message.reply_text('Parece que en este momento no hay nada en cola')
+		else:
+			update.message.reply_text('Hay {} torrents en cola\n'.format(len(torrents)))
+			for torrent in torrents:
+				update.message.reply_text(
+					'Torrent: {}\nEstado: {}\nTamaño: {}\nProgreso: {}%\nTasa de descarga: {}/s\n'.format(
+						torrent['name'],
+						torrent['state'],
+						get_size_format(torrent['total_size']),
+						str(float(torrent['progress'])*100),
+						get_size_format(torrent['dlspeed']),
+						)
 					)
-				)
-
-def unknown(update: Update, context: CallbackContext) -> None:
-	"""
-	El usuario ha introducido un comando desconocido
-	"""
-	logger.info(' El usuario ha ejecutado {}'.format(update.message.text))
-	update.message.reply_text(
-		'No te he entendido bien, por favor, usa las opciones disponibles.'
-	)
 
 def clear(update: Update, context: CallbackContext) -> None:
 	"""
 	Limpia los torrents finalizados de la cola de descarga
 	"""
-	logger.info(' El usuario ha ejecutado /clear')
 	FINISHED_STATES = [
 		'uploading',
 		'pausedUP',
 		'stalledUP',
 		'queuedUP',
 	]
+	if int(update.effective_chat.id) not in config.ALLOWED_IDS:
+		not_allowed(update)
+	else:
+		logger.info(' Un usuario CON permiso ha ejecutado /clear')
+		qb = Client(config.TORRENT['server'])
+		qb.login(config.TORRENT['user'], config.TORRENT['pass'])
+		torrents = qb.torrents()
+		del_torrents = len(torrents)
+		for torrent in torrents:
+			if torrent['state'] in FINISHED_STATES:
+				qb.delete(torrent['hash'])
+		torrents = qb.torrents()
+		del_torrents = del_torrents - len(torrents)
+		qb.logout()
+		logger.info('{} torrents han sido eliminados de la cola'.format(del_torrents))
+		if del_torrents != 0:
+			update.message.reply_text('Borrados todos los torrents finalizados')
+		else:
+			update.message.reply_text('No se ha eliminado ningún torrent de la cola')
+
+def unknown(update: Update, context: CallbackContext) -> None:
+	"""
+	El usuario ha introducido un comando desconocido
+	"""
+	logger.info(' El usuario ha ejecutado {}'.format(update.message.text))
+	update.message.reply_text('No te he entendido bien, por favor, usa las opciones disponibles.')
+
+# Auxiliares
+def get_size_format(b, factor=1024, suffix="B"):
+    """
+    Scale bytes to its proper byte format
+    e.g:
+        1253656 => '1.20MB'
+        1253656678 => '1.17GB'
+		Source: https://www.thepythoncode.com/article/download-torrent-files-in-python
+    """
+    for unit in ["", "K", "M", "G", "T", "P", "E", "Z"]:
+        if b < factor:
+            return f"{b:.2f}{unit}{suffix}"
+        b /= factor
+    return f"{b:.2f}Y{suffix}"
+
+def not_allowed(update):
+	logger.info('⚠️- Un usuario SIN permiso ha intentado usar el bot')
+	logger.info('Chat ID: ' + str(update.effective_chat.id))
+	logger.info('Usuario: ' + str(update.effective_chat.first_name) + ' ' + str(update.effective_chat.last_name))
+	logger.info('Bio: ' + str(update.effective_chat.bio))
+	update.message.reply_text('❌ No tienes permiso para hacer eso')
+
+def download_torrent():
+	"""
+	- Establece la conexión con qBitTorrent
+	- Descarga los ficheros
+	"""
 	qb = Client(config.TORRENT['server'])
 	qb.login(config.TORRENT['user'], config.TORRENT['pass'])
-	torrents = qb.torrents()
-	del_torrents = len(torrents)
-	for torrent in torrents:
-		if torrent['state'] in FINISHED_STATES:
-			qb.delete(torrent['hash'])
-	torrents = qb.torrents()
-	del_torrents = del_torrents - len(torrents)
+	qb.download_from_link(torrent_link, savepath=save_path)
 	qb.logout()
-	logger.info('{} torrents han sido eliminados de la cola'.format(del_torrents))
-	if del_torrents != 0:
-		update.message.reply_text('Borrados todos los torrents finalizados')
-	else:
-		update.message.reply_text('No se ha eliminado ningún torrent de la cola')
+	logger.info('✅ - {} en cola'.format(torrent_link))
 
-def start(update: Update, context: CallbackContext) -> None:
-	"""
-	Dar una descripción del bot y sus funciones actuales
-	"""
-	logger.info(' El usuario ha ejecutado /start')
-	update.message.reply_text(
-        'Buenas, mi nombre es TorrentDownloaderBot. '
-        'Soy un Bot de descargas de torrents creado por BenoBelmont\n\n'
-        'Yo solo sirvo a mi creador, pero puedes acceder a mi código fuente '
-        'sin problema alguno en https://github.com/jorgegomzar/TorrentDownloaderBot\n'
-        'Actualmente, entre mis funciones, se incluye:\n'
-        '  /download - Descargar torrents\n'
-        '  /status - Mostrar el estado de la cola de descarga\n'
-        '  /clear - Eliminar los torrents finalizados de la cola de descarga\n'
-    )
 
-def help(update, context) -> None:
-	"""
-	Muestra una ayuda con los comandos disponibles
-	"""
-	logger.info(' El usuario ha ejecutado /help')
-	update.message.reply_text(
-        '/start - Da una pequeña descripción de las funciones actuales del Bot\n'
-		'/download - Inicia el proceso para descargar un torrent\n'
-		'/status - Muestra la cola de descargas actuales\n'
-		'/clear - Limpia la cola de descargas\n'
-		'/help - Muestra esta lista'
-    )
-
-### MAIN
+### MAIN ###
 def main() -> None:
 	updater = Updater(token=config.TOKEN, use_context=True)
 	dispatcher = updater.dispatcher
@@ -232,19 +250,3 @@ def main() -> None:
 
 if __name__ == '__main__':
 	main()
-
-
-# Auxiliares
-def get_size_format(b, factor=1024, suffix="B"):
-    """
-    Scale bytes to its proper byte format
-    e.g:
-        1253656 => '1.20MB'
-        1253656678 => '1.17GB'
-		Source: https://www.thepythoncode.com/article/download-torrent-files-in-python
-    """
-    for unit in ["", "K", "M", "G", "T", "P", "E", "Z"]:
-        if b < factor:
-            return f"{b:.2f}{unit}{suffix}"
-        b /= factor
-    return f"{b:.2f}Y{suffix}"
